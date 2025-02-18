@@ -30,6 +30,9 @@ install:
   postgresql: true
   # -- Deploying a HashiCorp Vault instance
   vault: true
+  opentelemetry-collector: true
+  jaeger: true
+  prometheus: true
 
 fullnameOverride: ""
 nameOverride: ""
@@ -146,7 +149,7 @@ controlplane:
     # -- metrics api, used for application metrics, must not be internet facing
     metrics:
       # -- port for incoming api calls
-      port: 9090
+      port: 9464
       # -- path for incoming api calls
       path: /metrics
     catalog:
@@ -331,9 +334,16 @@ controlplane:
 
   # -- configuration of the [Open Telemetry Agent](https://opentelemetry.io/docs/instrumentation/java/automatic/agent-config/) to collect and expose metrics
   opentelemetry: |-
-    otel.javaagent.enabled=false
-    otel.javaagent.debug=false
-
+    otel.javaagent.enabled=true
+    otel.javaagent.debug=true
+    otel.traces.exporter=otlp
+    otel.exporter.jaeger.endpoint=http://umbrella-jaeger-collector.umbrella:4318
+    otel.metrics.exporter=prometheus
+  #    otel.exporter.otlp.endpoint=http://umbrella-opentelemetry-collector.umbrella:4318
+  #    otel.metrics.exporter=otlp
+  #    otel.logs.exporter=otlp
+  #    otel.service.name=dataplane
+  #    otel.traces.sampler=parentbased_always_on
 
   # -- [node selector](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector) to constrain pods to nodes
   nodeSelector: {}
@@ -432,7 +442,7 @@ dataplane:
     # -- metrics api, used for application metrics, must not be internet facing
     metrics:
       # -- port for incoming api calls
-      port: 9090
+      port: 9464
       # -- path for incoming api calls
       path: /metrics
 
@@ -573,9 +583,17 @@ dataplane:
 
   # -- configuration of the [Open Telemetry Agent](https://opentelemetry.io/docs/instrumentation/java/automatic/agent-config/) to collect and expose metrics
   opentelemetry: |-
-    otel.javaagent.enabled=false
-    otel.javaagent.debug=false
-
+    otel.javaagent.enabled=true
+    otel.javaagent.debug=true
+    otel.exporter.otlp.endpoint=http://umbrella-opentelemetry-collector.umbrella:4318
+    otel.exporter.jaeger.endpoint=http://umbrella-jaeger-collector.umbrella:4318
+    otel.metrics.exporter=prometheus
+  #    otel.traces.exporter=otlp
+  #    otel.metrics.exporter=otlp
+  #    otel.logs.exporter=otlp
+  #    otel.service.name=dataplane
+  #    otel.traces.sampler=parentbased_always_on
+  #    otel.metrics.exporter=prometheus
 
   # -- [node selector](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector) to constrain pods to nodes
   nodeSelector: {}
@@ -627,12 +645,12 @@ networkPolicy:
   controlplane:
     # -- Specify from rule network policy for cp (defaults to all namespaces)
     from:
-    - namespaceSelector: {}
+      - namespaceSelector: {}
   # -- Configuration of the dataplane component
   dataplane:
     # -- Specify from rule network policy for dp (defaults to all namespaces)
     from:
-    - namespaceSelector: {}
+      - namespaceSelector: {}
 
 serviceAccount:
   # -- Specifies whether a service account should be created
@@ -649,3 +667,143 @@ serviceAccount:
 tests:
   # -- Configure the hook-delete-policy for Helm tests
   hookDeletePolicy: before-hook-creation,hook-succeeded
+
+jaeger:
+  provisionDataStore:
+    cassandra: false
+  allInOne:
+    enabled: true
+  args:
+    - "--memory.max-traces=5000"
+    - "--query.base-path=/jaeger/ui"
+    - "--prometheus.server-url=http://umbrella-prometheus-server.umbrella:9090"
+    - "--prometheus.query.normalize-calls=true"
+    - "--prometheus.query.normalize-duration=true"
+  storage:
+    type: memory
+  agent:
+    enabled: false
+  collector:
+    enabled: false
+    service:
+      type: ClusterIP
+    config:
+      collector:
+        zipkin:
+          host-port: ":9411"
+    replicaCount: 1
+  query:
+    enabled: false
+    service:
+      type: ClusterIP
+    replicaCount: 1
+    serviceAccount:
+      create: true
+  ingester:
+    enabled: false
+
+opentelemetry-collector:
+  image:
+    repository: "otel/opentelemetry-collector-k8s"
+  mode: "deployment"
+  config:
+    exporters:
+      debug: {}
+      otlp:
+        endpoint: ${env:MY_POD_IP}:4317
+        tls:
+          insecure: true
+      otlphttp/jaeger:
+        endpoint: "http://umbrella-jaeger-collector.umbrella:4318"
+      otlphttp/prometheus:
+        endpoint: http://umbrella-prometheus-server.umbrella:9090/api/v1/otlp
+        encoding: proto
+        tls:
+          insecure: true
+    extensions:
+      health_check:
+        endpoint: ${env:MY_POD_IP}:13133
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: ${env:MY_POD_IP}:4317
+          http:
+            endpoint: ${env:MY_POD_IP}:4318
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: controlplane
+              scrape_interval: 5s
+              static_configs:
+                - targets:
+                    - 'umbrella-dataconsumer-1-edc-controlplane.umbrella:9464'
+              metrics_path: /metrics
+            - job_name: dataplane
+              scrape_interval: 5s
+              static_configs:
+                - targets:
+                    - 'umbrella-dataconsumer-1-edc-dataplane.umbrella:9464'
+              metrics_path: /metrics
+    service:
+      telemetry:
+        metrics:
+          address: ${env:MY_POD_IP}:8888
+      pipelines:
+        logs:
+          exporters:
+            - debug
+          processors:
+            - memory_limiter
+            - batch
+          receivers:
+            - otlp
+        metrics:
+          exporters:
+            - debug
+            - otlphttp/prometheus
+          processors:
+            - memory_limiter
+            - batch
+          receivers:
+            - prometheus
+        #            - otlp
+        traces:
+          exporters:
+            - debug
+            - otlphttp/jaeger
+          processors:
+            - memory_limiter
+            - batch
+          receivers:
+            - otlp
+            - jaeger
+prometheus:
+  logLevel: debug
+  server:
+    extraFlags:
+      - web.enable-otlp-receiver
+      - web.enable-lifecycle
+    otlp:
+      translation_strategy: NoUTF8EscapingWithSuffixes
+      # Recommended attributes to be promoted to labels.
+      promote_resource_attributes:
+        - service.instance.id
+        - service.name
+        - service.namespace
+        - cloud.availability_zone
+        - cloud.region
+        - container.name
+        - deployment.environment.name
+        - k8s.cluster.name
+        - k8s.container.name
+        - k8s.cronjob.name
+        - k8s.daemonset.name
+        - k8s.deployment.name
+        - k8s.job.name
+        - k8s.namespace.name
+        - k8s.pod.name
+        - k8s.replicaset.name
+        - k8s.statefulset.name
+    service:
+      servicePort: 9090

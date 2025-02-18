@@ -46,11 +46,17 @@ COPY ${OTEL_JAR} opentelemetry-javaagent.jar
 COPY ${ADDITIONAL_FILES} ./
 
 HEALTHCHECK NONE
-
+ENV OTEL_JAVAAGENT_CONFIGURATION_FILE=/app/opentelemetry.properties
 ENTRYPOINT ["java", \
      "-javaagent:/app/opentelemetry-javaagent.jar", \
      "-Dotel.javaagent.configuration-file=/app/opentelemetry.properties", \
      "-Dedc.fs.config=/app/configuration.properties", \
      "-Djava.security.egd=file:/dev/urandom", \
+#     "-Dotel.javaagent.debug=true", \
+     "-Dedc.metrics.enabled=true", \
+     "-Dedc.metrics.system.enabled=true", \
+     "-Dotel.metrics.exporter=prometheus", \
+     "-Dotel.metrics.protocol=http/protobuf", \
+     "-Dotel.instrumentation.micrometer.enabled=true", \
      "-jar", \
      "edc-runtime.jar"]
