@@ -81,3 +81,9 @@ dependencies:
     repository: https://prometheus-community.github.io/helm-charts
     version: "27.1.0"
     condition: prometheus.enabled
+  # Loki
+  - name: loki
+    alias: loki
+    version: "6.27.0"
+    repository: https://grafana.github.io/helm-charts
+    condition: loki.enabled
