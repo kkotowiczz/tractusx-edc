@@ -34,6 +34,7 @@ install:
   jaeger: true
   prometheus: true
   loki: true
+  grafana: true
 
 fullnameOverride: ""
 nameOverride: ""
@@ -340,6 +341,7 @@ controlplane:
     otel.traces.exporter=otlp
     otel.exporter.jaeger.endpoint=http://umbrella-jaeger-collector.umbrella:4318
     otel.metrics.exporter=prometheus
+    otel.logs.exporter=otlp
   #    otel.exporter.otlp.endpoint=http://umbrella-opentelemetry-collector.umbrella:4318
   #    otel.metrics.exporter=otlp
   #    otel.logs.exporter=otlp
@@ -589,6 +591,7 @@ dataplane:
     otel.exporter.otlp.endpoint=http://umbrella-opentelemetry-collector.umbrella:4318
     otel.exporter.jaeger.endpoint=http://umbrella-jaeger-collector.umbrella:4318
     otel.metrics.exporter=prometheus
+    otel.logs.exporter=otlp
   #    otel.traces.exporter=otlp
   #    otel.metrics.exporter=otlp
   #    otel.logs.exporter=otlp
@@ -851,3 +854,22 @@ loki:
     enabled: false
   selfMonitoring:
     enabled: false
+
+grafana:
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      url: http://umbrella-loki.umbrella:3100/
+      access: proxy
+      editable: false
+      isDefault: false
+  persistence:
+    type: pvc
+    enabled: true
+    storageClassName: standard
+    accessModes:
+      - ReadWriteOnce
+    size: 2Gi
+  adminUser: admin
+  adminPassword: admin
