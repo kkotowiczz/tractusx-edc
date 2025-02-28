@@ -345,7 +345,6 @@ controlplane:
   #    otel.exporter.otlp.endpoint=http://umbrella-opentelemetry-collector.umbrella:4318
   #    otel.metrics.exporter=otlp
   #    otel.logs.exporter=otlp
-  #    otel.service.name=dataplane
   #    otel.traces.sampler=parentbased_always_on
 
   # -- [node selector](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector) to constrain pods to nodes
@@ -741,17 +740,28 @@ opentelemetry-collector:
       prometheus:
         config:
           scrape_configs:
-            - job_name: controlplane
-              scrape_interval: 5s
+            - job_name: dataconsumer_controlplane
+              scrape_interval: 30s
               static_configs:
                 - targets:
                     - 'umbrella-dataconsumer-1-edc-controlplane.umbrella:9464'
               metrics_path: /metrics
-            - job_name: dataplane
-              scrape_interval: 5s
+            - job_name: dataconsumer_dataplane
+              scrape_interval: 30s
               static_configs:
                 - targets:
                     - 'umbrella-dataconsumer-1-edc-dataplane.umbrella:9464'
+            - job_name: dataprovider_controlplane
+              scrape_interval: 30s
+              static_configs:
+                - targets:
+                    - 'umbrella-dataprovider-edc-controlplane.umbrella:9464'
+              metrics_path: /metrics
+            - job_name: dataprovider_dataplane
+              scrape_interval: 30s
+              static_configs:
+                - targets:
+                    - 'umbrella-dataprovider-edc-dataplane.umbrella:9464'
               metrics_path: /metrics
     service:
       telemetry:
@@ -856,14 +866,20 @@ loki:
     enabled: false
 
 grafana:
-  additionalDataSources:
-    - name: Loki
-      type: loki
-      uid: loki
-      url: http://umbrella-loki.umbrella:3100/
-      access: proxy
-      editable: false
-      isDefault: false
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Loki
+          type: loki
+          url: http://umbrella-loki.umbrella:3100/
+          access: proxy
+          isDefault: false
+        - name: Prometheus
+          type: prometheus
+          url: http://umbrella-prometheus-server.umbrella:9090/
+          access: proxy
+          isDefault: false
   persistence:
     type: pvc
     enabled: true
